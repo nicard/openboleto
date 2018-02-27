@@ -27,6 +27,8 @@
 
 namespace OpenBoleto;
 
+use BillingDelivery\Core\Infrastructure\Helper\Implementations\Billet;
+
 use DateTime;
 
 /**
@@ -220,7 +222,7 @@ abstract class BoletoAbstract
      * @var Agente
      */
     protected $cedente;
-    
+
     /**
      * Entidade sacada (de quem se cobra o boleto)
      * @var Agente
@@ -275,6 +277,22 @@ abstract class BoletoAbstract
      */
     protected $logoBanco;
 
+
+    protected $maskLinhaDigitavel;
+
+    protected $showCodigoDeBarras = true;
+
+    protected $linhaDigitavelManual;
+
+    protected $codigoDeBarrasManual;
+
+    protected $isConvenio;
+
+    protected $segment;
+
+    protected $tipoMoeda;
+
+
     /**
      * Construtor
      *
@@ -308,6 +326,10 @@ abstract class BoletoAbstract
         if (!$this->getResourcePath()) {
             $this->setResourcePath(__DIR__ . '/../../resources');
         }
+
+        $this->setSegment(rand(1,9));
+        $this->setTipoMoeda(array_random([6,8]));
+
     }
 
     /**
@@ -415,6 +437,22 @@ abstract class BoletoAbstract
     }
 
     /**
+     * @param $value
+     */
+    public function setIsConvenio($value)
+    {
+        $this->isConvenio = $value;
+    }
+
+    /**
+     * @return mixed
+     */
+    public function isConvenio()
+    {
+        return $this->isConvenio;
+    }
+
+    /**
      * Retorna o código do banco
      *
      * @return string
@@ -474,7 +512,7 @@ abstract class BoletoAbstract
      * @param \DateTime $dataVencimento
      * @return BoletoAbstract
      */
-    public function setDataVencimento(DateTime $dataVencimento)
+    public function setDataVencimento($dataVencimento)
     {
         $this->dataVencimento = $dataVencimento;
         return $this;
@@ -1076,7 +1114,7 @@ abstract class BoletoAbstract
 
         $logoData or $logoData = 'data:image/' . pathinfo($this->getLogoBanco(), PATHINFO_EXTENSION) .
             ';base64,' . base64_encode(file_get_contents($this->getResourcePath() .
-            '/images/' . $this->getLogoBanco()));
+                '/images/' . $this->getLogoBanco()));
 
         return $logoData;
     }
@@ -1133,6 +1171,57 @@ abstract class BoletoAbstract
         }
 
         return $numero;
+    }
+
+    /**
+     * @return int
+     */
+    public function getSegment(): int
+    {
+        return $this->segment;
+    }
+
+    /**
+     * @param int $segment
+     */
+    public function setSegment(int $segment)
+    {
+        $this->segment = $segment;
+    }
+
+    /**
+     * @return mixed
+     */
+    public function getTipoMoeda()
+    {
+        return $this->tipoMoeda;
+    }
+
+    /**
+     * @param mixed $tipoMoeda
+     */
+    public function setTipoMoeda($tipoMoeda)
+    {
+        $this->tipoMoeda = $tipoMoeda;
+    }
+
+    /**
+     * @return mixed
+     */
+    public function getMaskLinhaDigitavel()
+    {
+        return $this->maskLinhaDigitavel;
+    }
+
+    /**
+     * @param mixed $maskLinhaDigitavel
+     * @return $this
+     */
+    public function setMaskLinhaDigitavel($maskLinhaDigitavel)
+    {
+        $this->maskLinhaDigitavel = $maskLinhaDigitavel;
+
+        return $this;
     }
 
     /**
@@ -1262,14 +1351,31 @@ abstract class BoletoAbstract
     }
 
     /**
+     * @return string
+     */
+    protected function getCnpj(){
+        if($cnpj = $this->getCedente()->getDocumento()) {
+            return str_limit(str_replace(array('.', '/', '-'), '',$cnpj), 8, '');
+        }
+        return '00000000';
+    }
+
+    /**
      * Retorna o número Febraban
      *
      * @return string
      */
     public function getNumeroFebraban()
     {
+        if($this->isConvenio())
+        {
+            return '8'. $this->getSegment().$this->getTipoMoeda(). $this->getDigitoVerificador() . $this->getValorZeroFill(11) .$this->getCnpj(). $this->getCampoLivreConvenio();
+        }
+
         return self::zeroFill($this->getCodigoBanco(), 3) . $this->getMoeda() . $this->getDigitoVerificador() . $this->getFatorVencimento() . $this->getValorZeroFill() . $this->getCampoLivre();
     }
+
+
 
     /**
      * Retorna o código do banco com o dígito verificador
@@ -1284,6 +1390,32 @@ abstract class BoletoAbstract
         return $codigoBanco . '-' . $digitoVerificador['digito'];
     }
 
+
+    public function setLinhaDigitavelManual($linhaDigitavelManual){
+        $this->linhaDigitavelManual = $linhaDigitavelManual;
+    }
+
+    public function getLinhaDigitavelManual(){
+        return $this->linhaDigitavelManual;
+    }
+
+    public function setCodigoDeBarrasManual($codigoDeBarrasManual){
+        $this->codigoDeBarrasManual = $codigoDeBarrasManual;
+    }
+
+    public function getCodigoDeBarrasManual(){
+        return $this->codigoDeBarrasManual;
+    }
+
+
+    protected function getLinhaDigitavelComMascara($codeline){
+
+        if($this->getMaskLinhaDigitavel()){
+            return str_replace_array('#', str_split($codeline), $this->getMaskLinhaDigitavel());
+        }else{
+            return $codeline;
+        }
+    }
     /**
      * Retorna a linha digitável do boleto
      *
@@ -1291,6 +1423,16 @@ abstract class BoletoAbstract
      */
     public function getLinhaDigitavel()
     {
+
+        if($this->getLinhaDigitavelManual())
+        {
+            return $this->getLinhaDigitavelComMascara($this->getLinhaDigitavelManual());
+        }
+
+        if($this->isConvenio()){
+            return $this->getLinhaDigitavelComMascara(Billet::fromBarCode($this->getNumeroFebraban())->getBarCodeLine());
+        }
+
         $chave = $this->getCampoLivre();
 
         // Break down febraban positions 20 to 44 into 3 blocks of 5, 10 and 10
@@ -1333,7 +1475,18 @@ abstract class BoletoAbstract
         $part4  = $this->getFatorVencimento() . $this->getValorZeroFill();
 
         // Now put everything together.
-        return "$part1 $part2 $part3 $cd $part4";
+        return $this->getLinhaDigitavelComMascara("$part1 $part2 $part3 $cd $part4");
+    }
+
+
+
+    public function showCodigoDeBarras($value = null)
+    {
+        if($value!==null){
+            $this->showCodigoDeBarras = $value;
+        }else{
+            return $this->showCodigoDeBarras;
+        }
     }
 
     /**
@@ -1343,7 +1496,12 @@ abstract class BoletoAbstract
      */
     public function getImagemCodigoDeBarras()
     {
-        $codigo = $this->getNumeroFebraban();
+
+        if(!$this->showCodigoDeBarras()){
+            return '';
+        }
+
+        $codigo = ($this->getCodigoDeBarrasManual())? $this->getCodigoDeBarrasManual() : $this->getNumeroFebraban();
 
         $barcodes = array('00110', '10001', '01001', '11000', '00101', '10100', '01100', '00011', '10010', '01010');
 
@@ -1363,10 +1521,10 @@ abstract class BoletoAbstract
 
         // Guarda inicial
         $retorno = '<div class="barcode">' .
-        '<div class="black thin"></div>' .
-        '<div class="white thin"></div>' .
-        '<div class="black thin"></div>' .
-        '<div class="white thin"></div>';
+            '<div class="black thin"></div>' .
+            '<div class="white thin"></div>' .
+            '<div class="black thin"></div>' .
+            '<div class="white thin"></div>';
 
         if (strlen($codigo) % 2 != 0) {
             $codigo = "0" . $codigo;
@@ -1401,9 +1559,9 @@ abstract class BoletoAbstract
 
         // Final
         return $retorno . '<div class="black large"></div>' .
-        '<div class="white thin"></div>' .
-        '<div class="black thin"></div>' .
-        '</div>';
+            '<div class="white thin"></div>' .
+            '<div class="black thin"></div>' .
+            '</div>';
     }
 
     /**
@@ -1411,10 +1569,12 @@ abstract class BoletoAbstract
      *
      * @return string
      */
-    protected function getValorZeroFill()
+    protected function getValorZeroFill($length=10)
     {
-        return str_pad(number_format($this->getValor(), 2, '', ''), 10, '0', STR_PAD_LEFT);
+        return str_pad(number_format($this->getValor(), 2, '', ''), $length, '0', STR_PAD_LEFT);
     }
+
+
 
     /**
      * Retorna o número de dias de 07/10/1997 até a data de vencimento do boleto
@@ -1433,13 +1593,34 @@ abstract class BoletoAbstract
     }
 
     /**
+     * @return string
+     */
+    protected function getCampoLivreConvenio()
+    {
+        if($this->getDataVencimento())
+        {
+            return $this->getDataVencimento()->format('Ymd').'9012345678901';
+        }
+
+        return '123456789012345678901';
+    }
+
+
+    /**
      * Retorna o dígito verificador do código Febraban
      *
      * @return int
      */
     protected function getDigitoVerificador()
     {
-        $num = self::zeroFill($this->getCodigoBanco(), 4) . $this->getMoeda() . $this->getFatorVencimento() . $this->getValorZeroFill() . $this->getCampoLivre();
+
+        if($this->isConvenio()){
+            $n = '8'. $this->getSegment().$this->getTipoMoeda().$this->getValorZeroFill(11) .$this->getCnpj(). $this->getCampoLivreConvenio();
+            return self::calculateMod($n);
+
+        }else {
+            $num = self::zeroFill($this->getCodigoBanco(), 4) . $this->getMoeda() . $this->getFatorVencimento() . $this->getValorZeroFill() . $this->getCampoLivre();
+        }
 
         $modulo = static::modulo11($num);
         if ($modulo['resto'] == 0 || $modulo['resto'] == 1 || $modulo['resto'] == 10) {
@@ -1450,6 +1631,40 @@ abstract class BoletoAbstract
 
         return $dv;
     }
+
+    protected static function calculateMod($barcode)
+    {
+        if (substr($barcode, 2, 1) == '6' || substr($barcode, 2, 1) == '7') {
+            return self::modulo10($barcode);
+        } else {
+            return self::specialMod11($barcode);
+        }
+    }
+
+    /**
+     * @param $num
+     * @return int
+     */
+    protected static function specialMod11($num)
+    {
+        $peso = 2;
+        $count = strlen($num) - 1;
+        $soma = 0;
+
+        while ($count >= 0) {
+            $postField = intval($num[$count]);
+            $soma += ($postField * $peso);
+            if ($peso == 9) {
+                $peso = 2;
+            } else {
+                $peso++;
+            }
+            $count--;
+        }
+        return (($soma * 10) % 11) % 10;
+    }
+
+
 
     /**
      * Helper para Zerofill (0 à esqueda).
@@ -1584,4 +1799,6 @@ abstract class BoletoAbstract
         }
         return $result;
     }
+
+
 }
