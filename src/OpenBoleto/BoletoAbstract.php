@@ -1407,11 +1407,14 @@ abstract class BoletoAbstract
         return $this->codigoDeBarrasManual;
     }
 
-
+    /**
+     * @param $codeline
+     * @return mixed
+     */
     protected function getLinhaDigitavelComMascara($codeline){
 
         if($this->getMaskLinhaDigitavel()){
-            return str_replace_array('#', str_split($codeline), $this->getMaskLinhaDigitavel());
+            return str_replace_array('#', str_split(str_replace(['.','-',' '],'',$codeline)), $this->getMaskLinhaDigitavel());
         }else{
             return $codeline;
         }
