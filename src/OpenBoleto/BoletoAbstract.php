@@ -328,7 +328,7 @@ abstract class BoletoAbstract
         }
 
         $this->setSegment(rand(1,9));
-        $this->setTipoMoeda(array_random([6,8]));
+        $this->setTipoMoeda(6);
 
     }
 
