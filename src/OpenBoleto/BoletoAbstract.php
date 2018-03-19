@@ -1269,9 +1269,15 @@ abstract class BoletoAbstract
      *
      * @return string
      */
-    public function getOutput()
+    public function getOutput($html = true)
     {
         ob_start();
+
+        if(!$html){
+            $resp = Billet::fromBarCode($this->getNumeroFebraban())->toArray();
+            $resp['code_line'] = $this->getLinhaDigitavel();
+            return $resp;
+        }
 
         extract(array(
             'linha_digitavel' => $this->getLinhaDigitavel(),
